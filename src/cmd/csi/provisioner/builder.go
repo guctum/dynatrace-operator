@@ -124,17 +124,15 @@ func (builder CommandBuilder) buildRun() func(*cobra.Command, []string) error {
 			return err
 		}
 
-		err = csiprovisioner.NewOneAgentProvisioner(csiManager, builder.getCsiOptions(), access).SetupWithManager(csiManager)
-		if err != nil {
-			return err
-		}
-
-		err = csigc.NewCSIGarbageCollector(csiManager.GetClient(), builder.getCsiOptions(), access).SetupWithManager(csiManager)
-		if err != nil {
-			return err
-		}
-
 		signalHandler := ctrl.SetupSignalHandler()
+		gc := csigc.NewCSIGarbageCollector(csiManager.GetClient(), builder.getCsiOptions(), access, builder.namespace)
+		go gc.Start(signalHandler)
+
+		err = csiprovisioner.NewOneAgentProvisioner(csiManager, builder.getCsiOptions(), access, gc).SetupWithManager(csiManager)
+		if err != nil {
+			return err
+		}
+
 		err = csiManager.Start(signalHandler)
 
 		return errors.WithStack(err)

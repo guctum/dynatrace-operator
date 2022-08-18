@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	dtcsi "github.com/Dynatrace/dynatrace-operator/src/controllers/csi"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/csi/metadata"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -30,7 +29,7 @@ func TestRunBinaryGarbageCollection(t *testing.T) {
 		resetMetrics()
 		gc := NewMockGarbageCollector()
 
-		gc.runBinaryGarbageCollection(pinnedVersionSet{}, testTenantUUID, testVersion1)
+		gc.runBinaryGarbageCollection(pinnedVersionSet{testVersion1: true}, testTenantUUID)
 
 		assert.Equal(t, float64(1), testutil.ToFloat64(gcRunsMetric))
 		assert.Equal(t, float64(0), testutil.ToFloat64(foldersRemovedMetric))
@@ -41,7 +40,7 @@ func TestRunBinaryGarbageCollection(t *testing.T) {
 		gc := NewMockGarbageCollector()
 		_ = gc.fs.MkdirAll(testBinaryDir, 0770)
 
-		gc.runBinaryGarbageCollection(pinnedVersionSet{}, testTenantUUID, testVersion1)
+		gc.runBinaryGarbageCollection(pinnedVersionSet{testVersion1: true}, testTenantUUID)
 
 		assert.Equal(t, float64(1), testutil.ToFloat64(gcRunsMetric))
 		assert.Equal(t, float64(0), testutil.ToFloat64(foldersRemovedMetric))
@@ -53,7 +52,7 @@ func TestRunBinaryGarbageCollection(t *testing.T) {
 		gc := NewMockGarbageCollector()
 		gc.mockUnusedVersions(testVersion1)
 
-		gc.runBinaryGarbageCollection(pinnedVersionSet{}, testTenantUUID, testVersion1)
+		gc.runBinaryGarbageCollection(pinnedVersionSet{testVersion1: true}, testTenantUUID)
 
 		assert.Equal(t, float64(1), testutil.ToFloat64(gcRunsMetric))
 		assert.Equal(t, float64(0), testutil.ToFloat64(foldersRemovedMetric))
@@ -66,7 +65,7 @@ func TestRunBinaryGarbageCollection(t *testing.T) {
 		gc := NewMockGarbageCollector()
 		gc.mockUnusedVersions(testVersion1, testVersion2, testVersion3)
 
-		gc.runBinaryGarbageCollection(pinnedVersionSet{}, testTenantUUID, testVersion2)
+		gc.runBinaryGarbageCollection(pinnedVersionSet{testVersion2: true}, testTenantUUID)
 
 		assert.Equal(t, float64(1), testutil.ToFloat64(gcRunsMetric))
 		assert.Equal(t, float64(2), testutil.ToFloat64(foldersRemovedMetric))
@@ -78,7 +77,7 @@ func TestRunBinaryGarbageCollection(t *testing.T) {
 		gc := NewMockGarbageCollector()
 		gc.mockUsedVersions(testVersion1, testVersion2, testVersion3)
 
-		gc.runBinaryGarbageCollection(pinnedVersionSet{}, testTenantUUID, testVersion3)
+		gc.runBinaryGarbageCollection(pinnedVersionSet{testVersion3: true}, testTenantUUID)
 
 		assert.Equal(t, float64(1), testutil.ToFloat64(gcRunsMetric))
 		assert.Equal(t, float64(0), testutil.ToFloat64(foldersRemovedMetric))
@@ -91,7 +90,7 @@ func TestRunBinaryGarbageCollection(t *testing.T) {
 		gc := NewMockGarbageCollector()
 		gc.mockUsedVersions(testVersion1, testVersion2)
 
-		gc.runBinaryGarbageCollection(pinnedVersionSet{testVersion2: true}, testTenantUUID, testVersion1)
+		gc.runBinaryGarbageCollection(pinnedVersionSet{testVersion1: true, testVersion2: true}, testTenantUUID)
 
 		assert.Equal(t, float64(1), testutil.ToFloat64(gcRunsMetric))
 		assert.Equal(t, float64(0), testutil.ToFloat64(foldersRemovedMetric))
@@ -115,7 +114,6 @@ func TestBinaryGarbageCollector_getUsedVersions(t *testing.T) {
 
 func NewMockGarbageCollector() *CSIGarbageCollector {
 	return &CSIGarbageCollector{
-		opts: dtcsi.CSIOptions{RootDir: testRootDir},
 		fs:   afero.NewMemMapFs(),
 		db:   metadata.FakeMemoryDB(),
 		path: metadata.PathResolver{RootDir: testRootDir},

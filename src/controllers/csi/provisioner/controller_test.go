@@ -12,6 +12,8 @@ import (
 
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
 	"github.com/Dynatrace/dynatrace-operator/src/arch"
+	dtcsi "github.com/Dynatrace/dynatrace-operator/src/controllers/csi"
+	csigc "github.com/Dynatrace/dynatrace-operator/src/controllers/csi/gc"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/csi/metadata"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube"
 	"github.com/Dynatrace/dynatrace-operator/src/dtclient"
@@ -50,6 +52,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 		provisioner := &OneAgentProvisioner{
 			apiReader: fake.NewClient(),
 			db:        metadata.FakeMemoryDB(),
+			gc:	createTestGC(),
 		}
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{})
 
@@ -64,6 +67,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 		provisioner := &OneAgentProvisioner{
 			apiReader: fake.NewClient(),
 			db:        db,
+			gc:	createTestGC(),
 		}
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dynakube.Name}})
 
@@ -88,6 +92,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 				},
 			),
 			db: metadata.FakeMemoryDB(),
+			gc:	createTestGC(),
 		}
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dynakubeName}})
 
@@ -112,6 +117,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 				},
 			),
 			db: metadata.FakeMemoryDB(),
+			gc:	createTestGC(),
 		}
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dynakubeName}})
 
@@ -138,6 +144,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 				},
 			),
 			db: db,
+			gc:	createTestGC(),
 		}
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dynakubeName}})
 
@@ -169,6 +176,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 					},
 				},
 			),
+			gc:	createTestGC(),
 		}
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dkName}})
 
@@ -203,6 +211,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 			dtcBuildFunc: func(dynakube.DynatraceClientProperties) (dtclient.Client, error) {
 				return nil, fmt.Errorf(errorMsg)
 			},
+			gc:	createTestGC(),
 		}
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dkName}})
 
@@ -235,6 +244,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 			dtcBuildFunc: func(dynakube.DynatraceClientProperties) (dtclient.Client, error) {
 				return mockClient, nil
 			},
+			gc:	createTestGC(),
 		}
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dkName}})
 
@@ -278,6 +288,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 			},
 			fs: errorfs,
 			db: metadata.FakeMemoryDB(),
+			gc:	createTestGC(),
 		}
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dkName}})
 
@@ -335,6 +346,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 			fs:       memFs,
 			db:       metadata.FakeMemoryDB(),
 			recorder: &record.FakeRecorder{},
+			gc:	createTestGC(),
 		}
 
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dkName}})
@@ -388,6 +400,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 			},
 			fs: memFs,
 			db: &metadata.FakeFailDB{},
+			gc:	createTestGC(),
 		}
 
 		result, err := provisioner.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dkName}})
@@ -453,6 +466,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 			fs:       memFs,
 			db:       memDB,
 			recorder: &record.FakeRecorder{},
+			gc:	createTestGC(),
 		}
 
 		result, err := r.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: dkName}})
@@ -526,6 +540,7 @@ func TestProvisioner_CreateDynakube(t *testing.T) {
 	db.InsertDynakube(expectedOtherDynakube)
 	provisioner := &OneAgentProvisioner{
 		db: db,
+		gc:	createTestGC(),
 	}
 
 	oldDynakube := metadata.Dynakube{}
@@ -554,6 +569,7 @@ func TestProvisioner_UpdateDynakube(t *testing.T) {
 
 	provisioner := &OneAgentProvisioner{
 		db: db,
+		gc:	createTestGC(),
 	}
 	newDynakube := metadata.NewDynakube(dkName, "new-uuid", "v2", "")
 
@@ -588,4 +604,8 @@ func setupTestZip(t *testing.T, fs afero.Fs) afero.File {
 	require.NoError(t, err)
 
 	return zipFile
+}
+
+func createTestGC() *csigc.CSIGarbageCollector {
+	return csigc.NewCSIGarbageCollector(nil, dtcsi.CSIOptions{}, nil, "")
 }

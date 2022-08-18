@@ -23,6 +23,7 @@ import (
 
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
 	dtcsi "github.com/Dynatrace/dynatrace-operator/src/controllers/csi"
+	csigc "github.com/Dynatrace/dynatrace-operator/src/controllers/csi/gc"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/csi/metadata"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube"
 	"github.com/Dynatrace/dynatrace-operator/src/dtclient"
@@ -54,10 +55,11 @@ type OneAgentProvisioner struct {
 	recorder     record.EventRecorder
 	db           metadata.Access
 	path         metadata.PathResolver
+	gc           *csigc.CSIGarbageCollector
 }
 
 // NewOneAgentProvisioner returns a new OneAgentProvisioner
-func NewOneAgentProvisioner(mgr manager.Manager, opts dtcsi.CSIOptions, db metadata.Access) *OneAgentProvisioner {
+func NewOneAgentProvisioner(mgr manager.Manager, opts dtcsi.CSIOptions, db metadata.Access, gc *csigc.CSIGarbageCollector) *OneAgentProvisioner {
 	return &OneAgentProvisioner{
 		client:       mgr.GetClient(),
 		apiReader:    mgr.GetAPIReader(),
@@ -67,6 +69,7 @@ func NewOneAgentProvisioner(mgr manager.Manager, opts dtcsi.CSIOptions, db metad
 		recorder:     mgr.GetEventRecorderFor("OneAgentProvisioner"),
 		db:           db,
 		path:         metadata.PathResolver{RootDir: opts.RootDir},
+		gc:           gc,
 	}
 }
 
@@ -77,18 +80,21 @@ func (provisioner *OneAgentProvisioner) SetupWithManager(mgr ctrl.Manager) error
 }
 
 func (provisioner *OneAgentProvisioner) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+	provisioner.gc.SetUnsafeToRun()
+	defer provisioner.gc.SetSafeToRun()
+
 	log.Info("reconciling DynaKube", "namespace", request.Namespace, "dynakube", request.Name)
 
 	dk, err := provisioner.getDynaKube(ctx, request.NamespacedName)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			return reconcile.Result{}, provisioner.db.DeleteDynakube(request.Name)
+			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, err
 	}
 	if !dk.NeedsCSIDriver() {
 		log.Info("CSI driver not needed")
-		return reconcile.Result{RequeueAfter: longRequeueDuration}, provisioner.db.DeleteDynakube(request.Name)
+		return reconcile.Result{RequeueAfter: longRequeueDuration}, nil
 	}
 
 	if dk.ConnectionInfo().TenantUUID == "" {

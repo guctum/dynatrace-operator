@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-conf
+data:
+  nginx.conf: |
+    user www-data;
+    worker_processes auto;
+    daemon off; # Don't run Nginx as daemon, as we run it in Docker we need a foreground process.
+    events { }
+
+    http {
+      server_names_hash_bucket_size 128;
+
+      access_log /var/log/nginx_access.log;
+      error_log /var/log/nginx_errors.log;
+
+      server {
+        listen       9050;
+        server_name  *.dynatracelabs.com;
+        server_name  www.dynatracelabs.com;
+        proxy_connect;
+        proxy_max_temp_file_size 0;
+        resolver 8.8.8.8;
+
+        location / {
+          proxy_pass http://$http_host;
+          proxy_set_header Host $http_host;
+        }
+      }
+
+      # Everything else is denied
+      server {
+        listen       9050;
+        server_name ~.+;
+        return 404;
+      }
+
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: asj34817
+spec:
+  selector:
+    role: app
+  ports:
+  - protocol: TCP
+    port: 9050
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-http-proxy
+  labels:
+    role: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      role: app
+  template:
+    metadata:
+      labels:
+        role: app
+    spec:
+      containers:
+      - name: app
+        image: reiz/nginx_proxy:0.0.3
+        ports:
+        - containerPort: 9050
+        volumeMounts:
+        - mountPath: /usr/local/nginx/conf/
+          readOnly: true
+          name: nginx-conf
+      volumes:
+      - name: nginx-conf
+        configMap:
+          name: nginx-conf
+          items:
+          - key: nginx.conf
+            path: nginx.conf

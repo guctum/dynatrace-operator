@@ -20,6 +20,11 @@ type envModifier interface {
 	getEnvs() []corev1.EnvVar
 }
 
+type initContainerModifier interface {
+	getInitContainers() []corev1.Container
+}
+
+
 var (
 	log = logger.NewDTLogger().WithName("activegate-statefulset-builder")
 )

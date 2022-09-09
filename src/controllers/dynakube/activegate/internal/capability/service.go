@@ -10,27 +10,25 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func CreateService(dynakube *dynatracev1beta1.DynaKube, feature string, servicePorts capability.AgServicePorts) *corev1.Service {
+func CreateService(dynakube *dynatracev1beta1.DynaKube, feature string) *corev1.Service {
 	var ports []corev1.ServicePort
 
-	if servicePorts.Webserver {
-		ports = append(ports,
-			corev1.ServicePort{
-				Name:       consts.HttpsServicePortName,
-				Protocol:   corev1.ProtocolTCP,
-				Port:       consts.HttpsServicePort,
-				TargetPort: intstr.FromString(consts.HttpsServicePortName),
-			},
-			corev1.ServicePort{
-				Name:       consts.HttpServicePortName,
-				Protocol:   corev1.ProtocolTCP,
-				Port:       consts.HttpServicePort,
-				TargetPort: intstr.FromString(consts.HttpServicePortName),
-			},
-		)
-	}
+	ports = append(ports,
+		corev1.ServicePort{
+			Name:       consts.HttpsServicePortName,
+			Protocol:   corev1.ProtocolTCP,
+			Port:       consts.HttpsServicePort,
+			TargetPort: intstr.FromString(consts.HttpsServicePortName),
+		},
+		corev1.ServicePort{
+			Name:       consts.HttpServicePortName,
+			Protocol:   corev1.ProtocolTCP,
+			Port:       consts.HttpServicePort,
+			TargetPort: intstr.FromString(consts.HttpServicePortName),
+		},
+	)
 
-	if servicePorts.Statsd {
+	if dynakube.IsStatsdCapabilityEnabled() {
 		ports = append(ports,
 			corev1.ServicePort{
 				Name:       consts.StatsdIngestPortName,

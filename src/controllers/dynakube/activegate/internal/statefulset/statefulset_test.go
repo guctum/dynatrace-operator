@@ -161,7 +161,7 @@ func TestAddTemplateSpec(t *testing.T) {
 		spec := sts.Spec.Template.Spec
 
 		assert.NotEmpty(t, spec.InitContainers)
-		assert.Contains(t, spec.ServiceAccountName, multiCapability.ServiceAccountOwner)
+		assert.Contains(t, spec.ServiceAccountName, dynakube.ActiveGateServiceAccountName())
 		assert.NotEmpty(t, spec.Volumes)
 	})
 

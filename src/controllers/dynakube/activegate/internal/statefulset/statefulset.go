@@ -100,12 +100,10 @@ func (builder StatefulSetBuilder) addLabels(sts *appsv1.StatefulSet) {
 func (builder StatefulSetBuilder) addTemplateSpec(sts *appsv1.StatefulSet) {
 	podSpec := corev1.PodSpec{
 		Containers:         builder.buildBaseContainer(),
-		InitContainers:     builder.buildInitContainers(),
 		NodeSelector:       builder.capability.Properties().NodeSelector,
-		ServiceAccountName: builder.buildServiceAccountName(),
+		ServiceAccountName: builder.dynakube.ActiveGateServiceAccountName(),
 		Affinity:           nodeAffinity(),
 		Tolerations:        buildTolerations(builder.capability),
-		Volumes:            builder.capability.Volumes(),
 		ImagePullSecrets: []corev1.LocalObjectReference{
 			{Name: builder.dynakube.PullSecret()},
 		},
@@ -127,7 +125,6 @@ func (builder StatefulSetBuilder) buildBaseContainer() []corev1.Container {
 		Image:           builder.dynakube.ActiveGateImage(),
 		Resources:       builder.capability.Properties().Resources,
 		Env:             builder.buildCommonEnvs(),
-		VolumeMounts:    builder.capability.ContainerVolumeMounts(),
 		ImagePullPolicy: corev1.PullAlways,
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
@@ -155,45 +152,8 @@ func (builder StatefulSetBuilder) buildBaseContainer() []corev1.Container {
 			},
 		},
 	}
-	if builder.capability.Config().SetReadinessPort {
-		container.ReadinessProbe.HTTPGet.Port = intstr.FromString(consts.HttpsServicePortName)
-	}
-	if builder.capability.Config().SetCommunicationPort {
-		container.Ports = []corev1.ContainerPort{
-			{
-				Name:          consts.HttpsServicePortName,
-				ContainerPort: consts.HttpsContainerPort,
-			},
-			{
-				Name:          consts.HttpServicePortName,
-				ContainerPort: consts.HttpContainerPort,
-			},
-		}
-	}
-	if builder.capability.Config().SetDnsEntryPoint {
-		container.Env = append(container.Env,
-			corev1.EnvVar{
-				Name:  consts.EnvDtDnsEntryPoint,
-				Value: builder.buildDNSEntryPoint(),
-			})
-	}
 
 	return []corev1.Container{container}
-}
-
-func (builder StatefulSetBuilder) buildDNSEntryPoint() string {
-	return fmt.Sprintf("https://%s/communication", buildServiceHostName(builder.dynakube.Name, builder.capability.ShortName()))
-}
-
-func (builder StatefulSetBuilder) buildInitContainers() []corev1.Container {
-	initContainers := builder.capability.InitContainersTemplates()
-
-	for i := range initContainers {
-		initContainers[i].Image = builder.dynakube.ActiveGateImage()
-		initContainers[i].Resources = builder.capability.Properties().Resources
-	}
-
-	return initContainers
 }
 
 func (builder StatefulSetBuilder) buildCommonEnvs() []corev1.EnvVar {
@@ -214,10 +174,6 @@ func (builder StatefulSetBuilder) buildCommonEnvs() []corev1.EnvVar {
 		envs = append(envs, corev1.EnvVar{Name: consts.EnvDtNetworkZone, Value: builder.dynakube.Spec.NetworkZone})
 	}
 	return envs
-}
-
-func (builder StatefulSetBuilder) buildServiceAccountName() string {
-	return consts.ServiceAccountPrefix + builder.capability.Config().ServiceAccountOwner
 }
 
 // BuildServiceHostName converts the name returned by BuildServiceName

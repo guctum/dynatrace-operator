@@ -34,7 +34,7 @@ type tokenConfig struct {
 	Timestamp  **metav1.Time
 }
 
-func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dynatracev1beta1.DynaKube) (dtclient.Client, bool, error) {
+func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dynatracev1beta1.DynaKube) (dtclient.Client, error) {
 	r.ValidTokens = true
 	if r.Now.IsZero() {
 		r.Now = metav1.Now()
@@ -49,7 +49,6 @@ func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dyn
 	r.ns = instance.GetNamespace()
 	r.dkName = instance.GetName()
 	secretName := instance.Tokens()
-	updateCR := false
 
 	r.secretKey = r.ns + ":" + secretName
 	secret, err := r.getSecret(ctx, instance)
@@ -57,30 +56,30 @@ func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dyn
 	if k8serrors.IsNotFound(err) {
 		message := fmt.Sprintf("Secret '%s' not found", r.secretKey)
 
-		updateCR = r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
+		r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
 			Type:    dynatracev1beta1.APITokenConditionType,
 			Status:  metav1.ConditionFalse,
 			Reason:  dynatracev1beta1.ReasonTokenSecretNotFound,
 			Message: message,
-		}) || updateCR
-		updateCR = r.removePaaSTokenCondition() || updateCR
+		})
+		r.removePaaSTokenCondition()
 
-		return nil, updateCR, nil
+		return nil, nil
 	} else if err != nil {
-		return nil, updateCR, err
+		return nil, err
 	}
 
 	if r.ApiToken == "" {
 		msg := fmt.Sprintf("Token %s on secret %s missing", dtclient.DynatraceApiToken, r.secretKey)
-		updateCR = r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
+		r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
 			Type:    dynatracev1beta1.APITokenConditionType,
 			Status:  metav1.ConditionFalse,
 			Reason:  dynatracev1beta1.ReasonTokenMissing,
 			Message: msg,
-		}) || updateCR
-		updateCR = r.removePaaSTokenCondition() || updateCR
+		})
+		r.removePaaSTokenCondition()
 
-		return nil, updateCR, nil
+		return nil, nil
 	}
 
 	dtc, err := dtf(DynatraceClientProperties{
@@ -98,15 +97,15 @@ func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dyn
 	if err != nil {
 		message := fmt.Sprintf("Failed to create Dynatrace API Client: %s", err)
 
-		updateCR = r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
+		r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
 			Type:    dynatracev1beta1.APITokenConditionType,
 			Status:  metav1.ConditionFalse,
 			Reason:  dynatracev1beta1.ReasonTokenMissing,
 			Message: message,
-		}) || updateCR
-		updateCR = r.removePaaSTokenCondition() || updateCR
+		})
+		r.removePaaSTokenCondition()
 
-		return nil, updateCR, err
+		return nil, err
 	}
 
 	var tokens = map[string]*tokenConfig{dtclient.DynatraceApiToken: {
@@ -119,7 +118,7 @@ func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dyn
 
 	if r.PaasToken == "" {
 		tokens[dtclient.DynatraceApiToken].Scopes = append(tokens[dtclient.DynatraceApiToken].Scopes, dtclient.TokenScopeInstallerDownload)
-		updateCR = r.removePaaSTokenCondition() || updateCR
+		r.removePaaSTokenCondition()
 	} else {
 		tokens[dtclient.DynatracePaasToken] = &tokenConfig{
 			Type:      dynatracev1beta1.PaaSTokenConditionType,
@@ -158,15 +157,15 @@ func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dyn
 	}
 
 	for _, token := range tokens {
-		updateCR = r.CheckToken(dtc, *token) || updateCR
+		r.CheckToken(dtc, *token)
 	}
 
-	return dtc, updateCR, nil
+	return dtc, nil
 }
 
-func (r *DynatraceClientReconciler) CheckToken(dtc dtclient.Client, token tokenConfig) bool {
+func (r *DynatraceClientReconciler) CheckToken(dtc dtclient.Client, token tokenConfig) {
 	if strings.TrimSpace(token.Value) != token.Value {
-		return r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
+		r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
 			Type:    token.Type,
 			Status:  metav1.ConditionFalse,
 			Reason:  dynatracev1beta1.ReasonTokenUnauthorized,
@@ -181,7 +180,7 @@ func (r *DynatraceClientReconciler) CheckToken(dtc dtclient.Client, token tokenC
 		if oldCondition.Reason != dynatracev1beta1.ReasonTokenReady {
 			r.ValidTokens = false
 		}
-		return false
+		return
 	}
 
 	nowCopy := r.Now
@@ -196,7 +195,7 @@ func (r *DynatraceClientReconciler) CheckToken(dtc dtclient.Client, token tokenC
 			Reason:  dynatracev1beta1.ReasonTokenUnauthorized,
 			Message: fmt.Sprintf("Token on secret %s unauthorized", r.secretKey),
 		})
-		return true
+		return
 	}
 
 	if err != nil {
@@ -206,7 +205,7 @@ func (r *DynatraceClientReconciler) CheckToken(dtc dtclient.Client, token tokenC
 			Reason:  dynatracev1beta1.ReasonTokenError,
 			Message: fmt.Sprintf("error when querying token on secret %s: %v", r.secretKey, err),
 		})
-		return true
+		return
 	}
 
 	missingScopes := make([]string, 0)
@@ -223,7 +222,7 @@ func (r *DynatraceClientReconciler) CheckToken(dtc dtclient.Client, token tokenC
 			Reason:  dynatracev1beta1.ReasonTokenScopeMissing,
 			Message: fmt.Sprintf("Token on secret %s missing scopes [%s]", r.secretKey, strings.Join(missingScopes, ", ")),
 		})
-		return true
+		return
 	}
 
 	r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
@@ -232,15 +231,12 @@ func (r *DynatraceClientReconciler) CheckToken(dtc dtclient.Client, token tokenC
 		Reason:  dynatracev1beta1.ReasonTokenReady,
 		Message: "Ready",
 	})
-	return true
 }
 
-func (r *DynatraceClientReconciler) removePaaSTokenCondition() bool {
+func (r *DynatraceClientReconciler) removePaaSTokenCondition() {
 	if meta.FindStatusCondition(r.status.Conditions, dynatracev1beta1.PaaSTokenConditionType) != nil {
 		meta.RemoveStatusCondition(&r.status.Conditions, dynatracev1beta1.PaaSTokenConditionType)
-		return true
 	}
-	return false
 }
 
 func (r *DynatraceClientReconciler) getSecret(ctx context.Context, instance *dynatracev1beta1.DynaKube) (*corev1.Secret, error) {
@@ -261,7 +257,7 @@ func (r *DynatraceClientReconciler) setTokens(secret *corev1.Secret) {
 	}
 }
 
-func (r *DynatraceClientReconciler) setAndLogCondition(conditions *[]metav1.Condition, condition metav1.Condition) bool {
+func (r *DynatraceClientReconciler) setAndLogCondition(conditions *[]metav1.Condition, condition metav1.Condition) {
 	c := meta.FindStatusCondition(*conditions, condition.Type)
 
 	if condition.Reason != dynatracev1beta1.ReasonTokenReady {
@@ -271,12 +267,11 @@ func (r *DynatraceClientReconciler) setAndLogCondition(conditions *[]metav1.Cond
 	}
 
 	if c != nil && c.Reason == condition.Reason && c.Message == condition.Message && c.Status == condition.Status {
-		return false
+		return
 	}
 
 	condition.LastTransitionTime = r.Now
 	meta.SetStatusCondition(conditions, condition)
-	return true
 }
 
 func convertProxy(proxy *dynatracev1beta1.DynaKubeProxy) *DynatraceClientProxy {

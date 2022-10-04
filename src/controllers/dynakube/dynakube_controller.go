@@ -91,71 +91,48 @@ type DynatraceClientFunc func(properties DynatraceClientProperties) (dtclient.Cl
 func (controller *DynakubeController) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	log.Info("reconciling DynaKube", "namespace", request.Namespace, "name", request.Name)
 
-	// Fetch the DynaKube instance
-	instance, err := controller.getDynakubeOrUnmap(ctx, request.Name, request.Namespace)
-	if err != nil {
+	dynakube := dynatracev1beta1.DynaKube{ObjectMeta: metav1.ObjectMeta{Name: request.Name, Namespace: request.Namespace}}
+	dkMapper := mapper.NewDynakubeMapper(ctx, controller.client, controller.apiReader, controller.operatorNamespace, &dynakube)
+	err := errors.WithStack(controller.client.Get(ctx, client.ObjectKey{Name: dynakube.Name, Namespace: dynakube.Namespace}, &dynakube))
+	if k8serrors.IsNotFound(err) {
+		err = dkMapper.UnmapFromDynaKube()
+		return reconcile.Result{}, nil
+	} else if err != nil {
 		return reconcile.Result{}, err
 	}
-	if instance == nil {
-		return reconcile.Result{}, nil
-	}
 
-	// A new mapper is initialized here as well as in getDynakubeOrUnmap because to solve these dependencies
-	// the whole dynakube controller would have to be bulldozed
-	dkMapper := mapper.NewDynakubeMapper(ctx, controller.client, controller.apiReader, controller.operatorNamespace, instance)
-	dkState := status.NewDynakubeState(instance)
-
-	updated := controller.reconcileIstio(instance)
+	oldStatus := dynakube.Status
+	updated := controller.reconcileIstio(&dynakube)
 	if updated {
-		dkState.Update(true, "Istio: objects updated")
-		dkState.RequeueAfter = shortUpdateInterval
+		log.Info("Istio: objects updated")
+		// dkState.RequeueAfter = shortUpdateInterval WHY ?????
 	}
 
-	controller.reconcileDynaKube(ctx, dkState, &dkMapper)
+	err = controller.reconcileDynaKube(ctx, &dynakube, &dkMapper)
 
-	if dkState.Err != nil {
-		if !dkState.ValidTokens {
-			instance.Status.SetPhase(dynatracev1beta1.Error)
-			_ = controller.updateCR(ctx, instance)
-			return reconcile.Result{RequeueAfter: dkState.RequeueAfter}, nil
-		}
-		if dkState.Updated || instance.Status.SetPhaseOnError(dkState.Err) {
-			if errClient := controller.updateCR(ctx, instance); errClient != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to update CR after failure, original, %s, then: %w", dkState.Err, errClient)
-			}
-		}
-
+	if err != nil {
 		var serr dtclient.ServerError
-		if ok := errors.As(dkState.Err, &serr); ok && serr.Code == http.StatusTooManyRequests {
+		if ok := errors.As(err, &serr); ok && serr.Code == http.StatusTooManyRequests {
+			// should we set the phase to error ?
 			log.Info("request limit for Dynatrace API reached! Next reconcile in one minute")
 			return reconcile.Result{RequeueAfter: 1 * time.Minute}, nil
 		}
 
-		return reconcile.Result{}, dkState.Err
+		if dynakube.Status.SetPhase(dynatracev1beta1.Error) {
+			if errClient := controller.updateCR(ctx, &dynakube); errClient != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to update CR after failure, original, %s, then: %w", err, errClient)
+			}
+		}
+		return reconcile.Result{}, err
 	}
 
-	if dkState.Updated {
-		if err := controller.updateCR(ctx, instance); err != nil {
+	if kubeobjects.IsDifferent(oldStatus, dynakube.Status) {
+		if err := controller.updateCR(ctx, &dynakube); err != nil {
 			return reconcile.Result{}, err
 		}
 	}
 
-	return reconcile.Result{RequeueAfter: dkState.RequeueAfter}, nil
-}
-
-func (controller *DynakubeController) getDynakubeOrUnmap(ctx context.Context, name string, namespace string) (*dynatracev1beta1.DynaKube, error) {
-	dynakube := dynatracev1beta1.DynaKube{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}
-	dkMapper := mapper.NewDynakubeMapper(ctx, controller.client, controller.apiReader, controller.operatorNamespace, &dynakube)
-	err := errors.WithStack(controller.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, &dynakube))
-
-	if k8serrors.IsNotFound(err) {
-		err = dkMapper.UnmapFromDynaKube()
-		return nil, err
-	} else if err != nil {
-		return nil, err
-	}
-
-	return &dynakube, nil
+	return reconcile.Result{}, nil
 }
 
 func (controller *DynakubeController) reconcileIstio(dynakube *dynatracev1beta1.DynaKube) bool {
@@ -173,120 +150,120 @@ func (controller *DynakubeController) reconcileIstio(dynakube *dynatracev1beta1.
 	return updated
 }
 
-func (controller *DynakubeController) reconcileDynaKube(ctx context.Context, dkState *status.DynakubeState, dkMapper *mapper.DynakubeMapper) {
+func (controller *DynakubeController) reconcileDynaKube(ctx context.Context, dynakube *dynatracev1beta1.DynaKube, dkMapper *mapper.DynakubeMapper) error {
 	dtcReconciler := DynatraceClientReconciler{
 		Client:              controller.client,
 		DynatraceClientFunc: controller.dtcBuildFunc,
 	}
-	dtc, upd, err := dtcReconciler.Reconcile(ctx, dkState.Instance)
-
-	dkState.Update(upd, "token conditions updated")
-	if dkState.Error(err) {
-		log.Error(err, "failed to check tokens")
-		return
+	dtc, err := dtcReconciler.Reconcile(ctx, dynakube)
+	if err != nil {
+		log.Info("failed to create dynatrace client")
+		return err
 	}
 
-	dkState.ValidTokens = true
 	if !dtcReconciler.ValidTokens {
-		dkState.ValidTokens = false
-		dkState.Update(true, "tokens not valid")
-		return
+		log.Info("tokens are invalid")
+		return err
 	}
 
-	err = status.SetDynakubeStatus(dkState.Instance, status.Options{
+	err = status.SetDynakubeStatus(dynakube, status.Options{
 		Dtc:       dtc,
 		ApiClient: controller.apiReader,
 	})
-	if dkState.Error(err) {
-		log.Error(err, "could not set Dynakube status")
-		return
+	if err != nil {
+		log.Info("could not set Dynakube status")
+		return err
 	}
 
 	err = dtpullsecret.
-		NewReconciler(controller.client, controller.apiReader, controller.scheme, dkState.Instance, dtcReconciler.ApiToken, dtcReconciler.PaasToken).
+		NewReconciler(controller.client, controller.apiReader, controller.scheme, dynakube, dtcReconciler.ApiToken, dtcReconciler.PaasToken).
 		Reconcile()
-	if dkState.Error(err) {
-		log.Error(err, "could not reconcile Dynatrace pull secret")
-		return
-	}
-
-	upd, err = version.ReconcileVersions(ctx, dkState, controller.apiReader, controller.fs, version.GetImageVersion)
-	dkState.Update(upd, "Found updates")
-	dkState.Error(err)
-
-	err = controller.reconcileActiveGate(ctx, dkState, dtc)
-	if dkState.Error(err) {
-		return
-	}
-
-	err = controller.reconcileOneAgent(ctx, dkState)
 	if err != nil {
-		return
+		log.Info("could not reconcile Dynatrace pull secret")
+		return err
 	}
 
-	endpointSecretGenerator := dtingestendpoint.NewEndpointSecretGenerator(controller.client, controller.apiReader, dkState.Instance.Namespace)
-	if dkState.Instance.NeedAppInjection() {
+	err = version.ReconcileVersions(ctx, dynakube, controller.apiReader, controller.fs, version.GetImageVersion)
+	if err != nil {
+		log.Info("could not reconcile component versions")
+		return err
+	}
+
+	err = controller.reconcileActiveGate(ctx, dynakube, dtc)
+	if err != nil {
+		log.Info("could not reconcile ActiveGate")
+		return err
+	}
+
+	err = controller.reconcileOneAgent(ctx, dynakube)
+	if err != nil {
+		log.Info("could not reconcile OneAgent")
+		return err
+	}
+
+	endpointSecretGenerator := dtingestendpoint.NewEndpointSecretGenerator(controller.client, controller.apiReader, dynakube.Namespace)
+	if dynakube.NeedAppInjection() {
 		if err = dkMapper.MapFromDynakube(); err != nil {
-			log.Error(err, "update of a map of namespaces failed")
+			log.Info("update of a map of namespaces failed")
+			return err
 		}
 
-		err = initgeneration.NewInitGenerator(controller.client, controller.apiReader, dkState.Instance.Namespace).GenerateForDynakube(ctx, dkState.Instance)
-		if dkState.Error(err) {
-			return
+		err = initgeneration.NewInitGenerator(controller.client, controller.apiReader, dynakube.Namespace).GenerateForDynakube(ctx, dynakube)
+		if err != nil {
+			log.Info("failed to generate init secret")
+			return err
 		}
 
-		err = endpointSecretGenerator.GenerateForDynakube(ctx, dkState.Instance)
-		if dkState.Error(err) {
-			log.Error(err, "failed to generate data-ingest secret for dynakube")
-			return
+		err = endpointSecretGenerator.GenerateForDynakube(ctx, dynakube)
+		if err != nil {
+			log.Info("failed to generate data-ingest secret")
+			return err
 		}
 
-		if dkState.Instance.ApplicationMonitoringMode() {
-			dkState.Instance.Status.SetPhase(dynatracev1beta1.Running)
-			dkState.Update(upd, "application monitoring reconciled")
+		if dynakube.ApplicationMonitoringMode() {
+			dynakube.Status.SetPhase(dynatracev1beta1.Running)
 		}
 	} else {
 		if err := dkMapper.UnmapFromDynaKube(); err != nil {
-			log.Error(err, "could not unmap dynakube from namespace")
-			return
+			log.Info("could not unmap dynakube from namespace")
+			return err
 		}
-		err = endpointSecretGenerator.RemoveEndpointSecrets(ctx, dkState.Instance)
-		if dkState.Error(err) {
-			return
+		err = endpointSecretGenerator.RemoveEndpointSecrets(ctx, dynakube)
+		if err != nil {
+			log.Info("could not remove data-ingest secret")
+			return err
 		}
 	}
-
-	upd = controller.determineDynaKubePhase(dkState.Instance)
-	dkState.Update(upd, "dynakube phase changed")
+	return nil
 }
 
-func (controller *DynakubeController) reconcileOneAgent(ctx context.Context, dkState *status.DynakubeState) (err error) {
-	if dkState.Instance.HostMonitoringMode() {
-		upd, err := oneagent.NewOneAgentReconciler(
-			controller.client, controller.apiReader, controller.scheme, dkState.Instance, daemonset.DeploymentTypeHostMonitoring,
-		).Reconcile(ctx, dkState)
-		if dkState.Error(err) {
-			return nil
+func (controller *DynakubeController) reconcileOneAgent(ctx context.Context, dynakube *dynatracev1beta1.DynaKube) (err error) {
+	if dynakube.HostMonitoringMode() {
+		err = oneagent.NewOneAgentReconciler(
+			controller.client, controller.apiReader, controller.scheme, dynakube, daemonset.DeploymentTypeHostMonitoring,
+		).Reconcile(ctx)
+		if err != nil {
+			return err
 		}
-		dkState.Update(upd, "host monitoring reconciled")
-	} else if dkState.Instance.CloudNativeFullstackMode() {
-		upd, err := oneagent.NewOneAgentReconciler(
-			controller.client, controller.apiReader, controller.scheme, dkState.Instance, daemonset.DeploymentTypeCloudNative,
-		).Reconcile(ctx, dkState)
-		if dkState.Error(err) {
-			return nil
+		log.Info("reconciled host-monitoring")
+	} else if dynakube.CloudNativeFullstackMode() {
+		err = oneagent.NewOneAgentReconciler(
+			controller.client, controller.apiReader, controller.scheme, dynakube, daemonset.DeploymentTypeCloudNative,
+		).Reconcile(ctx)
+		if err != nil {
+			return err
 		}
-		dkState.Update(upd, "cloud native fullstack monitoring reconciled")
-	} else if dkState.Instance.ClassicFullStackMode() {
-		upd, err := oneagent.NewOneAgentReconciler(
-			controller.client, controller.apiReader, controller.scheme, dkState.Instance, daemonset.DeploymentTypeFullStack,
-		).Reconcile(ctx, dkState)
-		if dkState.Error(err) {
-			return nil
+		log.Info("reconciled cloud-native")
+	} else if dynakube.ClassicFullStackMode() {
+		err = oneagent.NewOneAgentReconciler(
+			controller.client, controller.apiReader, controller.scheme, dynakube, daemonset.DeploymentTypeFullStack,
+		).Reconcile(ctx)
+		if err != nil {
+			return err
 		}
-		dkState.Update(upd, "classic fullstack reconciled")
+		log.Info("reconciled classic-fullstack")
 	} else {
-		controller.removeOneAgentDaemonSet(dkState)
+		controller.removeOneAgentDaemonSet(dynakube)
 	}
 	return err
 }
@@ -299,38 +276,34 @@ func updatePhaseIfChanged(instance *dynatracev1beta1.DynaKube, newPhase dynatrac
 	return true
 }
 
-func (controller *DynakubeController) removeOneAgentDaemonSet(dkState *status.DynakubeState) {
-	ds := appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: dkState.Instance.OneAgentDaemonsetName(), Namespace: dkState.Instance.Namespace}}
-	if err := kubeobjects.Delete(context.TODO(), controller.client, &ds); dkState.Error(err) {
-		return
-	}
+func (controller *DynakubeController) removeOneAgentDaemonSet(dynakube *dynatracev1beta1.DynaKube) error {
+	ds := appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: dynakube.OneAgentDaemonsetName(), Namespace: dynakube.Namespace}}
+	return kubeobjects.Delete(context.TODO(), controller.client, &ds)
 }
 
-func (controller *DynakubeController) reconcileActiveGate(ctx context.Context, dynakubeState *status.DynakubeState, dtc dtclient.Client) error {
-	reconciler := activegate.NewReconciler(ctx, controller.client, controller.apiReader, controller.scheme, dynakubeState.Instance, dtc)
-	upd, err := reconciler.Reconcile()
+func (controller *DynakubeController) reconcileActiveGate(ctx context.Context, dynakube *dynatracev1beta1.DynaKube, dtc dtclient.Client) error {
+	reconciler := activegate.NewReconciler(ctx, controller.client, controller.apiReader, controller.scheme, dynakube, dtc)
+	_, err := reconciler.Reconcile() // TODO fix Reconcile interface usage
 
 	if err != nil {
 		return errors.WithMessage(err, "failed to reconcile ActiveGate")
 	}
-
-	dynakubeState.Update(upd, "ActiveGate reconciled")
-	controller.startApiMonitoring(dynakubeState, dtc)
+	controller.setupAutomaticApiMonitoring(dynakube, dtc)
 
 	return nil
 }
 
-func (controller *DynakubeController) startApiMonitoring(dynakubeState *status.DynakubeState, dtc dtclient.Client) {
-	if dynakubeState.Instance.Status.KubeSystemUUID != "" &&
-		dynakubeState.Instance.FeatureAutomaticKubernetesApiMonitoring() &&
-		dynakubeState.Instance.IsKubernetesMonitoringActiveGateEnabled() {
+func (controller *DynakubeController) setupAutomaticApiMonitoring(dynakube *dynatracev1beta1.DynaKube, dtc dtclient.Client) {
+	if dynakube.Status.KubeSystemUUID != "" &&
+		dynakube.FeatureAutomaticKubernetesApiMonitoring() &&
+		dynakube.IsKubernetesMonitoringActiveGateEnabled() {
 
-		clusterLabel := dynakubeState.Instance.FeatureAutomaticKubernetesApiMonitoringClusterName()
+		clusterLabel := dynakube.FeatureAutomaticKubernetesApiMonitoringClusterName()
 		if clusterLabel == "" {
-			clusterLabel = dynakubeState.Instance.Name
+			clusterLabel = dynakube.Name
 		}
 
-		err := apimonitoring.NewReconciler(dtc, clusterLabel, dynakubeState.Instance.Status.KubeSystemUUID).
+		err := apimonitoring.NewReconciler(dtc, clusterLabel, dynakube.Status.KubeSystemUUID).
 			Reconcile()
 		if err != nil {
 			log.Error(err, "could not create setting")
@@ -338,9 +311,9 @@ func (controller *DynakubeController) startApiMonitoring(dynakubeState *status.D
 	}
 }
 
-func (controller *DynakubeController) updateCR(ctx context.Context, instance *dynatracev1beta1.DynaKube) error {
-	instance.Status.UpdatedTimestamp = metav1.Now()
-	err := controller.client.Status().Update(ctx, instance)
+func (controller *DynakubeController) updateCR(ctx context.Context, dynakube *dynatracev1beta1.DynaKube) error {
+	dynakube.Status.UpdatedTimestamp = metav1.Now()
+	err := controller.client.Status().Update(ctx, dynakube)
 	if err != nil && k8serrors.IsConflict(err) {
 		// OneAgent reconciler already updates instance which leads to conflict here
 		// Only print info in that event

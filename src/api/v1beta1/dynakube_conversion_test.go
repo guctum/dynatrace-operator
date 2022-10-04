@@ -18,7 +18,7 @@ const (
 	testToken                     = "test-token"
 	testCustomPullSecret          = "test-custompullsecret"
 	testProxyValue                = "test-proxyvalue"
-	testTrustedCAs                = "test-trustedCAs"
+	testTrustedCAs           = "test-trustedCAs"
 	testNetworkZone               = "test-networkzone"
 	testOneAgentImage             = "test-oneagent-image"
 	testOneAgentVersion           = "test-oneagent-version"

@@ -59,12 +59,12 @@ type OneAgentReconciler struct {
 // Note:
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
-func (r *OneAgentReconciler) Reconcile(ctx context.Context, rec *status.DynakubeState) (bool, error) {
+func (r *OneAgentReconciler) Reconcile(ctx context.Context) error {
 	log.Info("reconciling OneAgent")
 
-	upd, err := r.reconcileRollout(rec)
+	err := r.reconcileRollout(rec)
 	if err != nil {
-		return false, err
+		return err
 	} else if upd {
 		log.Info("rollout reconciled")
 	}
@@ -93,7 +93,7 @@ func (r *OneAgentReconciler) Reconcile(ctx context.Context, rec *status.Dynakube
 	return upd, nil
 }
 
-func (r *OneAgentReconciler) reconcileRollout(dkState *status.DynakubeState) (bool, error) {
+func (r *OneAgentReconciler) reconcileRollout(dkState *status.DynakubeState) (error) {
 	updateCR := false
 
 	// Define a new DaemonSet object

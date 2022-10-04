@@ -33,8 +33,7 @@ func ReconcileVersions(
 	apiReader client.Reader,
 	fs afero.Afero,
 	verProvider VersionProviderCallback,
-) (bool, error) {
-	upd := false
+) error {
 	dk := dkState.Instance
 
 	needsOneAgentUpdate := dk.NeedsOneAgent() &&
@@ -54,20 +53,20 @@ func ReconcileVersions(
 		dkState.IsOutdated(dk.Status.Statsd.LastUpdateProbeTimestamp, ProbeThreshold)
 
 	if !(needsActiveGateUpdate || needsOneAgentUpdate || needsEecUpdate || needsStatsdUpdate) {
-		return false, nil
+		return nil
 	}
 
 	caCertPath := path.Join(TmpCAPath, TmpCAName)
 	dockerConfig := dockerconfig.NewDockerConfig(apiReader, *dkState.Instance)
 	err := dockerConfig.SetupAuths(ctx)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if dk.Spec.TrustedCAs != "" {
 		_ = os.MkdirAll(TmpCAPath, 0755)
 		err := dockerConfig.SaveCustomCAs(ctx, fs, caCertPath)
 		if err != nil {
-			return false, err
+			return err
 		}
 		defer func() {
 			_ = os.Remove(TmpCAPath)
@@ -99,7 +98,7 @@ func ReconcileVersions(
 		}
 	}
 
-	return upd, nil
+	return nil
 }
 
 func updateImageVersion(

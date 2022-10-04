@@ -37,6 +37,9 @@ const (
 	TrustedCAKey = "certs"
 	ProxyKey     = "proxy"
 	TlsCertKey   = "server.crt"
+
+	StatusHashAnnotation = InternalFlagPrefix + "status-hash"
+	TemplateHashAnnotation = InternalFlagPrefix + "template-hash"
 )
 
 // NeedsActiveGate returns true when a feature requires ActiveGate instances.

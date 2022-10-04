@@ -13,7 +13,7 @@ type Options struct {
 	ApiClient client.Reader
 }
 
-func SetDynakubeStatus(instance *dynatracev1beta1.DynaKube, opts Options) error {
+func SetDynakubeStatus(dynakube *dynatracev1beta1.DynaKube, opts Options) error {
 	clt := opts.ApiClient
 	dtc := opts.Dtc
 
@@ -52,11 +52,15 @@ func SetDynakubeStatus(instance *dynatracev1beta1.DynaKube, opts Options) error 
 		FormattedCommunicationEndpoints: connectionInfo.FormattedCommunicationEndpoints,
 	}
 
-	instance.Status.KubeSystemUUID = string(uid)
-	instance.Status.CommunicationHostForClient = communicationHostStatus
-	instance.Status.ConnectionInfo = connectionInfoStatus
-	instance.Status.LatestAgentVersionUnixDefault = latestAgentVersionUnixDefault
-	instance.Status.LatestAgentVersionUnixPaas = latestAgentVersionUnixPaas
+	dynakube.Status.KubeSystemUUID = string(uid)
+	dynakube.Status.CommunicationHostForClient = communicationHostStatus
+	dynakube.Status.ConnectionInfo = connectionInfoStatus
+	dynakube.Status.LatestAgentVersionUnixDefault = latestAgentVersionUnixDefault
+	dynakube.Status.LatestAgentVersionUnixPaas = latestAgentVersionUnixPaas
+
+	if dynakube.Status.Tokens != dynakube.Tokens() {
+		dynakube.Status.Tokens = dynakube.Tokens()
+	}
 
 	return nil
 }

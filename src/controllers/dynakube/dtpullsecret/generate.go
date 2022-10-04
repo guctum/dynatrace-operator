@@ -37,8 +37,8 @@ func newDockerConfigWithAuth(username string, password string, registry string, 
 }
 
 func (r *Reconciler) GenerateData() (map[string][]byte, error) {
-	connectionInfo := r.instance.ConnectionInfo()
-	registry, err := getImageRegistryFromAPIURL(r.instance.Spec.APIURL)
+	connectionInfo := r.dynakube.ConnectionInfo()
+	registry, err := getImageRegistryFromAPIURL(r.dynakube.Spec.APIURL)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}

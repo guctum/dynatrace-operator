@@ -14,6 +14,7 @@ import (
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/istio"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/oneagent"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/oneagent/daemonset"
+	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/probe"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/status"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/version"
 	"github.com/Dynatrace/dynatrace-operator/src/dtclient"
@@ -34,7 +35,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-const shortUpdateInterval = 30 * time.Second
+const (
+	shortUpdateInterval  = 1 * time.Minute
+	mediumUpdateInterval = 5 * time.Minute
+	longUpdateInterval   = 30 * time.Minute
+)
 
 func Add(mgr manager.Manager, _ string) error {
 	return NewController(mgr).SetupWithManager(mgr)
@@ -53,6 +58,7 @@ func NewDynaKubeController(c client.Client, apiReader client.Reader, scheme *run
 		fs:                afero.Afero{Fs: afero.NewOsFs()},
 		dtcBuildFunc:      dtcBuildFunc,
 		config:            config,
+		prober:            &probe.ReconcileProbe{},
 		operatorPodName:   os.Getenv("POD_NAME"),
 		operatorNamespace: os.Getenv("POD_NAMESPACE"),
 	}
@@ -76,6 +82,7 @@ type DynakubeController struct {
 	fs                afero.Afero
 	dtcBuildFunc      DynatraceClientFunc
 	config            *rest.Config
+	prober            probe.Prober
 	operatorPodName   string
 	operatorNamespace string
 }
@@ -91,48 +98,57 @@ type DynatraceClientFunc func(properties DynatraceClientProperties) (dtclient.Cl
 func (controller *DynakubeController) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	log.Info("reconciling DynaKube", "namespace", request.Namespace, "name", request.Name)
 
-	dynakube := dynatracev1beta1.DynaKube{ObjectMeta: metav1.ObjectMeta{Name: request.Name, Namespace: request.Namespace}}
-	dkMapper := mapper.NewDynakubeMapper(ctx, controller.client, controller.apiReader, controller.operatorNamespace, &dynakube)
-	err := errors.WithStack(controller.client.Get(ctx, client.ObjectKey{Name: dynakube.Name, Namespace: dynakube.Namespace}, &dynakube))
-	if k8serrors.IsNotFound(err) {
-		err = dkMapper.UnmapFromDynaKube()
-		return reconcile.Result{}, nil
-	} else if err != nil {
-		return reconcile.Result{}, err
+	dynakube := dynatracev1beta1.DynaKube{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      request.Name,
+			Namespace: request.Namespace,
+		},
 	}
+
+	requeueAfter := longUpdateInterval
+
+	dkMapper := mapper.NewDynakubeMapper(ctx, controller.client, controller.apiReader, controller.operatorNamespace, &dynakube)
+
+	err := controller.apiReader.Get(ctx, client.ObjectKey{Name: dynakube.Name, Namespace: dynakube.Namespace}, &dynakube)
+	if k8serrors.IsNotFound(err) {
+		return reconcile.Result{}, dkMapper.UnmapFromDynaKube()
+	} else if err != nil {
+		return reconcile.Result{}, errors.WithStack(err)
+	}
+
+	controller.prober.SetNow()
 
 	oldStatus := dynakube.Status
 	updated := controller.reconcileIstio(&dynakube)
 	if updated {
 		log.Info("Istio: objects updated")
-		// dkState.RequeueAfter = shortUpdateInterval WHY ?????
+		requeueAfter = shortUpdateInterval // WHY ?????
 	}
 
 	err = controller.reconcileDynaKube(ctx, &dynakube, &dkMapper)
 
 	if err != nil {
+		requeueAfter = mediumUpdateInterval
+
 		var serr dtclient.ServerError
 		if ok := errors.As(err, &serr); ok && serr.Code == http.StatusTooManyRequests {
 			// should we set the phase to error ?
 			log.Info("request limit for Dynatrace API reached! Next reconcile in one minute")
-			return reconcile.Result{RequeueAfter: 1 * time.Minute}, nil
+			return reconcile.Result{RequeueAfter: shortUpdateInterval}, nil
 		}
-
-		if dynakube.Status.SetPhase(dynatracev1beta1.Error) {
-			if errClient := controller.updateCR(ctx, &dynakube); errClient != nil {
-				return reconcile.Result{}, fmt.Errorf("failed to update CR after failure, original, %s, then: %w", err, errClient)
-			}
-		}
-		return reconcile.Result{}, err
+		dynakube.Status.SetPhase(dynatracev1beta1.Error)
+	} else {
+		dynakube.Status.SetPhase(controller.determineDynaKubePhase(&dynakube))
 	}
 
 	if kubeobjects.IsDifferent(oldStatus, dynakube.Status) {
-		if err := controller.updateCR(ctx, &dynakube); err != nil {
-			return reconcile.Result{}, err
+		requeueAfter = mediumUpdateInterval
+		if errClient := controller.updateCR(ctx, &dynakube); errClient != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to update CR after failure, original, %s, then: %w", err, errClient)
 		}
 	}
 
-	return reconcile.Result{}, nil
+	return reconcile.Result{RequeueAfter: requeueAfter}, err
 }
 
 func (controller *DynakubeController) reconcileIstio(dynakube *dynatracev1beta1.DynaKube) bool {
@@ -183,7 +199,7 @@ func (controller *DynakubeController) reconcileDynaKube(ctx context.Context, dyn
 		return err
 	}
 
-	err = version.ReconcileVersions(ctx, dynakube, controller.apiReader, controller.fs, version.GetImageVersion)
+	err = version.ReconcileVersions(ctx, *dynakube, controller.prober, controller.apiReader, controller.fs, version.GetImageVersion)
 	if err != nil {
 		log.Info("could not reconcile component versions")
 		return err
@@ -241,7 +257,7 @@ func (controller *DynakubeController) reconcileOneAgent(ctx context.Context, dyn
 	if dynakube.HostMonitoringMode() {
 		err = oneagent.NewOneAgentReconciler(
 			controller.client, controller.apiReader, controller.scheme, dynakube, daemonset.DeploymentTypeHostMonitoring,
-		).Reconcile(ctx)
+		).Reconcile(ctx, dynakube, controller.prober)
 		if err != nil {
 			return err
 		}
@@ -249,7 +265,7 @@ func (controller *DynakubeController) reconcileOneAgent(ctx context.Context, dyn
 	} else if dynakube.CloudNativeFullstackMode() {
 		err = oneagent.NewOneAgentReconciler(
 			controller.client, controller.apiReader, controller.scheme, dynakube, daemonset.DeploymentTypeCloudNative,
-		).Reconcile(ctx)
+		).Reconcile(ctx, dynakube, controller.prober)
 		if err != nil {
 			return err
 		}
@@ -257,7 +273,7 @@ func (controller *DynakubeController) reconcileOneAgent(ctx context.Context, dyn
 	} else if dynakube.ClassicFullStackMode() {
 		err = oneagent.NewOneAgentReconciler(
 			controller.client, controller.apiReader, controller.scheme, dynakube, daemonset.DeploymentTypeFullStack,
-		).Reconcile(ctx)
+		).Reconcile(ctx, dynakube, controller.prober)
 		if err != nil {
 			return err
 		}
@@ -266,14 +282,6 @@ func (controller *DynakubeController) reconcileOneAgent(ctx context.Context, dyn
 		controller.removeOneAgentDaemonSet(dynakube)
 	}
 	return err
-}
-
-func updatePhaseIfChanged(instance *dynatracev1beta1.DynaKube, newPhase dynatracev1beta1.DynaKubePhaseType) bool {
-	if instance.Status.Phase == newPhase {
-		return false
-	}
-	instance.Status.Phase = newPhase
-	return true
 }
 
 func (controller *DynakubeController) removeOneAgentDaemonSet(dynakube *dynatracev1beta1.DynaKube) error {

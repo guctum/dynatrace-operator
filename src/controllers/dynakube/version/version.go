@@ -60,12 +60,14 @@ func ReconcileVersions(
 	dockerConfig := dockerconfig.NewDockerConfig(apiReader, dynakube)
 	err := dockerConfig.SetupAuths(ctx)
 	if err != nil {
+		log.Info("failed to set up auths for image version checks")
 		return err
 	}
 	if dynakube.Spec.TrustedCAs != "" {
 		_ = os.MkdirAll(TmpCAPath, 0755)
 		err := dockerConfig.SaveCustomCAs(ctx, fs, caCertPath)
 		if err != nil {
+			log.Info("failed to save CAs locally for image version checks")
 			return err
 		}
 		defer func() {

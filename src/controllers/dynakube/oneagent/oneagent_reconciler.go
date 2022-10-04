@@ -13,6 +13,7 @@ import (
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/probe"
 	"github.com/Dynatrace/dynatrace-operator/src/kubeobjects"
 	"github.com/Dynatrace/dynatrace-operator/src/kubesystem"
+	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -106,6 +107,7 @@ func (r *OneAgentReconciler) reconcileRollout(ctx context.Context, dynakube *dyn
 
 	updated, err := kubeobjects.CreateOrUpdateDaemonSet(r.client, log, dsDesired)
 	if err != nil {
+		log.Info("failed to roll out new OneAgent DaemonSet")
 		return err
 	}
 	if updated {
@@ -121,6 +123,7 @@ func (r *OneAgentReconciler) reconcileRollout(ctx context.Context, dynakube *dyn
 		if err == nil {
 			log.Info("removed oneagent daemonset with feature in name")
 		} else if !k8serrors.IsNotFound(err) {
+			log.Info("failed to remove oneagent daemonset with feature in name")
 			return err
 		}
 	}
@@ -130,7 +133,7 @@ func (r *OneAgentReconciler) reconcileRollout(ctx context.Context, dynakube *dyn
 func (r *OneAgentReconciler) getDesiredDaemonSet(dynakube *dynatracev1beta1.DynaKube) (*appsv1.DaemonSet, error) {
 	kubeSysUID, err := kubesystem.GetUID(r.apiReader)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	dsDesired, err := r.newDaemonSetForCR(dynakube, string(kubeSysUID))

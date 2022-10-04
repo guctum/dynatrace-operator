@@ -2,7 +2,6 @@ package dtpullsecret
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
@@ -45,7 +44,7 @@ func (r *Reconciler) Reconcile() error {
 	if r.dynakube.Spec.CustomPullSecret == "" {
 		err := r.reconcilePullSecret()
 		if err != nil {
-			log.Error(err, "could not reconcile pull secret")
+			log.Info("could not reconcile pull secret")
 			return errors.WithStack(err)
 		}
 	}
@@ -56,12 +55,12 @@ func (r *Reconciler) Reconcile() error {
 func (r *Reconciler) reconcilePullSecret() error {
 	pullSecretData, err := r.GenerateData()
 	if err != nil {
-		return fmt.Errorf("could not generate pull secret data: %w", err)
+		return errors.WithMessage(err, "could not generate pull secret data")
 	}
 
 	pullSecret, err := r.createPullSecretIfNotExists(pullSecretData)
 	if err != nil {
-		return fmt.Errorf("failed to create or update secret: %w", err)
+		return errors.WithMessage(err, "failed to create or update secret: %w")
 	}
 
 	return r.updatePullSecretIfOutdated(pullSecret, pullSecretData)
@@ -93,7 +92,7 @@ func (r *Reconciler) createPullSecret(pullSecretData map[string][]byte) (*corev1
 
 	err := r.client.Create(context.TODO(), pullSecret)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create secret '%s': %w", extendWithPullSecretSuffix(r.dynakube.Name), err)
+		return nil, errors.Errorf("failed to create secret '%s': %w", extendWithPullSecretSuffix(r.dynakube.Name), err)
 	}
 	return pullSecret, nil
 }
@@ -102,7 +101,7 @@ func (r *Reconciler) updatePullSecret(pullSecret *corev1.Secret, desiredPullSecr
 	log.Info("updating secret", "name", pullSecret.Name)
 	pullSecret.Data = desiredPullSecretData
 	if err := r.client.Update(context.TODO(), pullSecret); err != nil {
-		return fmt.Errorf("failed to update secret %s: %w", pullSecret.Name, err)
+		return errors.WithMessagef(err, "failed to update secret %s", pullSecret.Name)
 	}
 	return nil
 }

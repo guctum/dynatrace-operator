@@ -66,6 +66,13 @@ func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dyn
 
 		return nil, nil
 	} else if err != nil {
+		message := fmt.Sprintf("Secret '%s' couldn't be read", r.secretKey)
+		r.setAndLogCondition(&r.status.Conditions, metav1.Condition{
+			Type:    dynatracev1beta1.APITokenConditionType,
+			Status:  metav1.ConditionFalse,
+			Reason:  dynatracev1beta1.ReasonTokenError,
+			Message: message,
+		})
 		return nil, err
 	}
 

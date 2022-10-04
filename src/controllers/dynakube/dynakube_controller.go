@@ -143,7 +143,7 @@ func (controller *DynakubeController) Reconcile(ctx context.Context, request rec
 
 	if kubeobjects.IsDifferent(oldStatus, dynakube.Status) {
 		requeueAfter = mediumUpdateInterval
-		if errClient := controller.updateCR(ctx, &dynakube); errClient != nil {
+		if errClient := controller.updateDynakubeStatus(ctx, &dynakube); errClient != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update CR after failure, original, %s, then: %w", err, errClient)
 		}
 	}
@@ -183,8 +183,8 @@ func (controller *DynakubeController) reconcileDynaKube(ctx context.Context, dyn
 	}
 
 	err = status.SetDynakubeStatus(dynakube, status.Options{
-		Dtc:       dtc,
-		ApiClient: controller.apiReader,
+		DtClient:  dtc,
+		ApiReader: controller.apiReader,
 	})
 	if err != nil {
 		log.Info("could not set Dynakube status")
@@ -319,12 +319,10 @@ func (controller *DynakubeController) setupAutomaticApiMonitoring(dynakube *dyna
 	}
 }
 
-func (controller *DynakubeController) updateCR(ctx context.Context, dynakube *dynatracev1beta1.DynaKube) error {
+func (controller *DynakubeController) updateDynakubeStatus(ctx context.Context, dynakube *dynatracev1beta1.DynaKube) error {
 	dynakube.Status.UpdatedTimestamp = metav1.Now()
 	err := controller.client.Status().Update(ctx, dynakube)
 	if err != nil && k8serrors.IsConflict(err) {
-		// OneAgent reconciler already updates instance which leads to conflict here
-		// Only print info in that event
 		log.Info("could not update instance due to conflict")
 		return nil
 	}

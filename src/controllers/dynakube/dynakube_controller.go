@@ -172,11 +172,6 @@ func (controller *DynakubeController) reconcileDynaKube(ctx context.Context, dyn
 		return err
 	}
 
-	if !dtcReconciler.ValidTokens {
-		log.Info("tokens are invalid")
-		return err
-	}
-
 	err = status.SetDynakubeStatus(dynakube, status.Options{
 		DtClient:  dtc,
 		ApiReader: controller.apiReader,
@@ -212,6 +207,16 @@ func (controller *DynakubeController) reconcileDynaKube(ctx context.Context, dyn
 		return err
 	}
 
+	err = controller.reconcileAppInjection(ctx, dynakube, dkMapper)
+	if err != nil {
+		log.Info("could not reconcile app injection")
+		return err
+	}
+
+	return nil
+}
+
+func (controller *DynakubeController) reconcileAppInjection(ctx context.Context, dynakube *dynatracev1beta1.DynaKube, dkMapper *mapper.DynakubeMapper ) (err error) {
 	endpointSecretGenerator := dtingestendpoint.NewEndpointSecretGenerator(controller.client, controller.apiReader, dynakube.Namespace)
 	if dynakube.NeedAppInjection() {
 		if err = dkMapper.MapFromDynakube(); err != nil {

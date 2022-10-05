@@ -31,7 +31,7 @@ type tokenConfig struct {
 	Type       string
 	Key, Value string
 	Scopes     []string
-	Timestamp  **metav1.Time
+	Timestamp  *metav1.Time
 }
 
 func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dynatracev1beta1.DynaKube) (dtclient.Client, error) {
@@ -120,7 +120,7 @@ func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dyn
 		Key:       dtclient.DynatraceApiToken,
 		Value:     r.ApiToken,
 		Scopes:    []string{},
-		Timestamp: &r.status.LastAPITokenProbeTimestamp,
+		Timestamp: r.status.LastAPITokenProbeTimestamp,
 	}}
 
 	if r.PaasToken == "" {
@@ -132,7 +132,7 @@ func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dyn
 			Key:       dtclient.DynatracePaasToken,
 			Value:     r.PaasToken,
 			Scopes:    []string{dtclient.TokenScopeInstallerDownload},
-			Timestamp: &r.status.LastPaaSTokenProbeTimestamp,
+			Timestamp: r.status.LastPaaSTokenProbeTimestamp,
 		}
 	}
 
@@ -159,7 +159,7 @@ func (r *DynatraceClientReconciler) Reconcile(ctx context.Context, instance *dyn
 			Key:       dtclient.DynatraceDataIngestToken,
 			Value:     r.DataIngestToken,
 			Scopes:    []string{dtclient.TokenScopeMetricsIngest},
-			Timestamp: &r.status.LastDataIngestTokenProbeTimestamp,
+			Timestamp: r.status.LastDataIngestTokenProbeTimestamp,
 		}
 	}
 
@@ -182,7 +182,7 @@ func (r *DynatraceClientReconciler) CheckToken(dtc dtclient.Client, token tokenC
 
 	// At this point, we can query the Dynatrace API to verify whether our tokens are correct. To avoid excessive requests,
 	// we wait at least 5 mins between proves.
-	if *token.Timestamp != nil && r.Now.Time.Before((*token.Timestamp).Add(5*time.Minute)) {
+	if token.Timestamp != nil && r.Now.Time.Before((*token.Timestamp).Add(5*time.Minute)) {
 		oldCondition := meta.FindStatusCondition(r.status.Conditions, token.Type)
 		if oldCondition.Reason != dynatracev1beta1.ReasonTokenReady {
 			r.ValidTokens = false
@@ -191,7 +191,7 @@ func (r *DynatraceClientReconciler) CheckToken(dtc dtclient.Client, token tokenC
 	}
 
 	nowCopy := r.Now
-	*token.Timestamp = &nowCopy
+	token.Timestamp = &nowCopy
 	ss, err := dtc.GetTokenScopes(token.Value)
 
 	var serr dtclient.ServerError

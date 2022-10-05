@@ -10,7 +10,6 @@ import (
 
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/oneagent/daemonset"
-	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/probe"
 	"github.com/Dynatrace/dynatrace-operator/src/kubeobjects"
 	"github.com/Dynatrace/dynatrace-operator/src/kubesystem"
 	"github.com/pkg/errors"
@@ -60,7 +59,7 @@ type OneAgentReconciler struct {
 // Note:
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
-func (r *OneAgentReconciler) Reconcile(ctx context.Context, dynakube *dynatracev1beta1.DynaKube, prober probe.Prober) error {
+func (r *OneAgentReconciler) Reconcile(ctx context.Context, dynakube *dynatracev1beta1.DynaKube) error {
 	log.Info("reconciling OneAgent")
 
 	err := r.reconcileRollout(ctx, dynakube)
@@ -78,8 +77,9 @@ func (r *OneAgentReconciler) Reconcile(ctx context.Context, dynakube *dynatracev
 		}
 	}
 
-	if prober.IsOutdated(r.dynakube.Status.OneAgent.LastHostsRequestTimestamp, updInterval) {
-		r.dynakube.Status.OneAgent.LastHostsRequestTimestamp = prober.Now()
+	now := metav1.Now()
+	if kubeobjects.IsOutdated(r.dynakube.Status.OneAgent.LastHostsRequestTimestamp, &now, updInterval) {
+		r.dynakube.Status.OneAgent.LastHostsRequestTimestamp = &now
 		log.Info("updated last host request time stamp")
 
 		err = r.reconcileInstanceStatuses(ctx, r.dynakube)

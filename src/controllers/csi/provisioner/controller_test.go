@@ -13,7 +13,7 @@ import (
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
 	"github.com/Dynatrace/dynatrace-operator/src/arch"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/csi/metadata"
-	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube"
+	dtbuilder "github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/dtclient"
 	"github.com/Dynatrace/dynatrace-operator/src/dtclient"
 	"github.com/Dynatrace/dynatrace-operator/src/scheme/fake"
 	"github.com/spf13/afero"
@@ -194,7 +194,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 					},
 				},
 			),
-			dtcBuildFunc: func(dynakube.DynatraceClientProperties) (dtclient.Client, error) {
+			dtcBuildFunc: func(dtbuilder.DynatraceClientProperties) (dtclient.Client, error) {
 				return nil, fmt.Errorf(errorMsg)
 			},
 		}
@@ -231,7 +231,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 					},
 				},
 			),
-			dtcBuildFunc: func(dynakube.DynatraceClientProperties) (dtclient.Client, error) {
+			dtcBuildFunc: func(dtbuilder.DynatraceClientProperties) (dtclient.Client, error) {
 				return mockClient, nil
 			},
 			fs: errorfs,
@@ -283,7 +283,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 					},
 				},
 			),
-			dtcBuildFunc: func(dynakube.DynatraceClientProperties) (dtclient.Client, error) {
+			dtcBuildFunc: func(dtbuilder.DynatraceClientProperties) (dtclient.Client, error) {
 				return mockClient, nil
 			},
 			fs:       memFs,
@@ -333,7 +333,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 					},
 				},
 			),
-			dtcBuildFunc: func(dynakube.DynatraceClientProperties) (dtclient.Client, error) {
+			dtcBuildFunc: func(dtbuilder.DynatraceClientProperties) (dtclient.Client, error) {
 				return mockClient, nil
 			},
 			fs: memFs,
@@ -392,7 +392,7 @@ func TestOneAgentProvisioner_Reconcile(t *testing.T) {
 					},
 				},
 			),
-			dtcBuildFunc: func(dynakube.DynatraceClientProperties) (dtclient.Client, error) {
+			dtcBuildFunc: func(dtbuilder.DynatraceClientProperties) (dtclient.Client, error) {
 				return mockClient, nil
 			},
 			fs:       memFs,

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
-	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube"
+	dtbuilder "github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/dtclient"
 	"github.com/Dynatrace/dynatrace-operator/src/dtclient"
 	"github.com/Dynatrace/dynatrace-operator/src/scheme"
 	"github.com/Dynatrace/dynatrace-operator/src/scheme/fake"
@@ -159,7 +159,7 @@ func createDefaultReconciler(fakeClient client.Client, dtClient *dtclient.MockDy
 		client:       fakeClient,
 		apiReader:    fakeClient,
 		scheme:       scheme.Scheme,
-		dtClientFunc: dynakube.StaticDynatraceClient(dtClient),
+		dtClientFunc: dtbuilder.StaticDynatraceClient(dtClient),
 		podNamespace: testNamespace,
 		runLocal:     true,
 	}

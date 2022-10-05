@@ -16,6 +16,7 @@ import (
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/oneagent/daemonset"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/status"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/version"
+	dtbuilder "github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/dtclient"
 	"github.com/Dynatrace/dynatrace-operator/src/dtclient"
 	dtingestendpoint "github.com/Dynatrace/dynatrace-operator/src/ingestendpoint"
 	"github.com/Dynatrace/dynatrace-operator/src/initgeneration"
@@ -46,18 +47,17 @@ func Add(mgr manager.Manager, _ string) error {
 
 // NewController returns a new ReconcileDynaKube
 func NewController(mgr manager.Manager) *DynakubeController {
-	return NewDynaKubeController(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), BuildDynatraceClient, mgr.GetConfig())
+	return NewDynaKubeController(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), dtbuilder.BuildDynatraceClient, mgr.GetConfig())
 }
 
-func NewDynaKubeController(c client.Client, apiReader client.Reader, scheme *runtime.Scheme, dtcBuildFunc DynatraceClientFunc, config *rest.Config) *DynakubeController {
+func NewDynaKubeController(kubeClient client.Client, apiReader client.Reader, scheme *runtime.Scheme, dtcBuildFunc dtbuilder.DynatraceClientFunc, config *rest.Config) *DynakubeController {
 	return &DynakubeController{
-		client:            c,
+		client:            kubeClient,
 		apiReader:         apiReader,
 		scheme:            scheme,
 		fs:                afero.Afero{Fs: afero.NewOsFs()},
 		dtcBuildFunc:      dtcBuildFunc,
 		config:            config,
-		operatorPodName:   os.Getenv("POD_NAME"),
 		operatorNamespace: os.Getenv("POD_NAMESPACE"),
 	}
 }
@@ -78,13 +78,10 @@ type DynakubeController struct {
 	apiReader         client.Reader
 	scheme            *runtime.Scheme
 	fs                afero.Afero
-	dtcBuildFunc      DynatraceClientFunc
+	dtcBuildFunc      dtbuilder.DynatraceClientFunc
 	config            *rest.Config
-	operatorPodName   string
 	operatorNamespace string
 }
-
-type DynatraceClientFunc func(properties DynatraceClientProperties) (dtclient.Client, error)
 
 // Reconcile reads that state of the cluster for a DynaKube object and makes changes based on the state read
 // and what is in the DynaKube.Spec
@@ -162,11 +159,8 @@ func (controller *DynakubeController) reconcileIstio(dynakube *dynatracev1beta1.
 }
 
 func (controller *DynakubeController) reconcileDynaKube(ctx context.Context, dynakube *dynatracev1beta1.DynaKube, dkMapper *mapper.DynakubeMapper) error {
-	dtcReconciler := DynatraceClientReconciler{
-		Client:              controller.client,
-		DynatraceClientFunc: controller.dtcBuildFunc,
-	}
-	dtc, err := dtcReconciler.Reconcile(ctx, dynakube)
+
+	dtc, tokens, err := dtbuilder.NewDynatraceClientReconciler(controller.client, controller.dtcBuildFunc).Reconcile(ctx, dynakube)
 	if err != nil {
 		log.Info("failed to create dynatrace client")
 		return err
@@ -182,7 +176,7 @@ func (controller *DynakubeController) reconcileDynaKube(ctx context.Context, dyn
 	}
 
 	err = dtpullsecret.
-		NewReconciler(controller.client, controller.apiReader, controller.scheme, dynakube, dtcReconciler.ApiToken, dtcReconciler.PaasToken).
+		NewReconciler(controller.client, controller.apiReader, controller.scheme, dynakube, tokens).
 		Reconcile()
 	if err != nil {
 		log.Info("could not reconcile Dynatrace pull secret")
@@ -216,7 +210,7 @@ func (controller *DynakubeController) reconcileDynaKube(ctx context.Context, dyn
 	return nil
 }
 
-func (controller *DynakubeController) reconcileAppInjection(ctx context.Context, dynakube *dynatracev1beta1.DynaKube, dkMapper *mapper.DynakubeMapper ) (err error) {
+func (controller *DynakubeController) reconcileAppInjection(ctx context.Context, dynakube *dynatracev1beta1.DynaKube, dkMapper *mapper.DynakubeMapper) (err error) {
 	endpointSecretGenerator := dtingestendpoint.NewEndpointSecretGenerator(controller.client, controller.apiReader, dynakube.Namespace)
 	if dynakube.NeedAppInjection() {
 		if err = dkMapper.MapFromDynakube(); err != nil {

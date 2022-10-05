@@ -1,4 +1,4 @@
-package dynakube
+package dtclient
 
 import (
 	"context"

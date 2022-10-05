@@ -6,8 +6,8 @@ import (
 	"time"
 
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
-	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube"
 	"github.com/Dynatrace/dynatrace-operator/src/dtclient"
+	dtbuilder "github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/dtclient"
 	"github.com/Dynatrace/dynatrace-operator/src/kubeobjects"
 	"github.com/Dynatrace/dynatrace-operator/src/kubesystem"
 	corev1 "k8s.io/api/core/v1"
@@ -27,7 +27,7 @@ type NodesController struct {
 	client       client.Client
 	apiReader    client.Reader
 	scheme       *runtime.Scheme
-	dtClientFunc dynakube.DynatraceClientFunc
+	dtClientFunc dtbuilder.DynatraceClientFunc
 	runLocal     bool
 	podNamespace string
 }
@@ -67,7 +67,7 @@ func NewController(mgr manager.Manager) *NodesController {
 		client:       mgr.GetClient(),
 		apiReader:    mgr.GetAPIReader(),
 		scheme:       mgr.GetScheme(),
-		dtClientFunc: dynakube.BuildDynatraceClient,
+		dtClientFunc: dtbuilder.BuildDynatraceClient,
 		runLocal:     kubesystem.IsRunLocally(),
 		podNamespace: os.Getenv("POD_NAMESPACE"),
 	}
@@ -273,7 +273,7 @@ func (controller *NodesController) isNodeDeletable(cachedNode CacheEntry) bool {
 }
 
 func (controller *NodesController) sendMarkedForTermination(dynakubeInstance *dynatracev1beta1.DynaKube, cachedNode CacheEntry) error {
-	dtp, err := dynakube.NewDynatraceClientProperties(context.TODO(), controller.client, *dynakubeInstance)
+	dtp, err := dtbuilder.NewDynatraceClientProperties(context.TODO(), controller.client, *dynakubeInstance)
 	if err != nil {
 		log.Error(err, err.Error())
 	}

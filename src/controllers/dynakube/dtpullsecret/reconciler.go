@@ -5,6 +5,8 @@ import (
 	"reflect"
 
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
+	"github.com/Dynatrace/dynatrace-operator/src/dtclient"
+	dtbuilder "github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/dtclient"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,9 +28,11 @@ type Reconciler struct {
 	apiToken, paasToken string
 }
 
-func NewReconciler(clt client.Client, apiReader client.Reader, scheme *runtime.Scheme, instance *dynatracev1beta1.DynaKube, apiToken, paasToken string) *Reconciler {
-	if paasToken == "" {
-		paasToken = apiToken
+func NewReconciler(clt client.Client, apiReader client.Reader, scheme *runtime.Scheme, instance *dynatracev1beta1.DynaKube, tokens dtbuilder.TokenMap) *Reconciler {
+	apiToken := tokens[dtclient.DynatraceApiToken].Value
+	paasToken := apiToken
+	if tokens[dtclient.DynatracePaasToken] == nil {
+		paasToken = tokens[dtclient.DynatracePaasToken].Value
 	}
 	return &Reconciler{
 		client:    clt,

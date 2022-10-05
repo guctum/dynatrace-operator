@@ -24,9 +24,9 @@ import (
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
 	dtcsi "github.com/Dynatrace/dynatrace-operator/src/controllers/csi"
 	"github.com/Dynatrace/dynatrace-operator/src/controllers/csi/metadata"
-	"github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube"
 	"github.com/Dynatrace/dynatrace-operator/src/dtclient"
 	"github.com/Dynatrace/dynatrace-operator/src/installer/image"
+	dtbuilder "github.com/Dynatrace/dynatrace-operator/src/controllers/dynakube/dtclient"
 	"github.com/pkg/errors"
 	"github.com/spf13/afero"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -49,7 +49,7 @@ type OneAgentProvisioner struct {
 	client       client.Client
 	apiReader    client.Reader
 	opts         dtcsi.CSIOptions
-	dtcBuildFunc dynakube.DynatraceClientFunc
+	dtcBuildFunc dtbuilder.DynatraceClientFunc
 	fs           afero.Fs
 	recorder     record.EventRecorder
 	db           metadata.Access
@@ -62,7 +62,7 @@ func NewOneAgentProvisioner(mgr manager.Manager, opts dtcsi.CSIOptions, db metad
 		client:       mgr.GetClient(),
 		apiReader:    mgr.GetAPIReader(),
 		opts:         opts,
-		dtcBuildFunc: dynakube.BuildDynatraceClient,
+		dtcBuildFunc: dtbuilder.BuildDynatraceClient,
 		fs:           afero.NewOsFs(),
 		recorder:     mgr.GetEventRecorderFor("OneAgentProvisioner"),
 		db:           db,
@@ -245,7 +245,7 @@ func (provisioner *OneAgentProvisioner) createOrUpdateDynakubeMetadata(ctx conte
 }
 
 func buildDtc(provisioner *OneAgentProvisioner, ctx context.Context, dk *dynatracev1beta1.DynaKube) (dtclient.Client, error) {
-	dtp, err := dynakube.NewDynatraceClientProperties(ctx, provisioner.apiReader, *dk)
+	dtp, err := dtbuilder.NewDynatraceClientProperties(ctx, provisioner.apiReader, *dk)
 	if err != nil {
 		return nil, err
 	}

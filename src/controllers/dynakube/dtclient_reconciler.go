@@ -264,21 +264,16 @@ func (r *DynatraceClientReconciler) setTokens(secret *corev1.Secret) {
 }
 
 func (r *DynatraceClientReconciler) setAndLogCondition(conditions *[]metav1.Condition, condition metav1.Condition) error {
-	c := meta.FindStatusCondition(*conditions, condition.Type)
-
+	var err error
 	if condition.Reason != dynatracev1beta1.ReasonTokenReady {
 		log.Info("problem with token detected", "dynakube", r.dkName, "token", condition.Type,
 			"msg", condition.Message)
-		return errors.New("Tokens are not valid")
-	}
-
-	if c != nil && c.Reason == condition.Reason && c.Message == condition.Message && c.Status == condition.Status {
-		return nil
+		err = errors.New("tokens are not valid")
 	}
 
 	condition.LastTransitionTime = r.Now
 	meta.SetStatusCondition(conditions, condition)
-	return nil
+	return err
 }
 
 func convertProxy(proxy *dynatracev1beta1.DynaKubeProxy) *DynatraceClientProxy {

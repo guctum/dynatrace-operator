@@ -15,6 +15,7 @@ limitations under the License.
 package main
 
 import (
+	"cloud.google.com/go/profiler"
 	"context"
 	"fmt"
 	"os"
@@ -53,6 +54,7 @@ func main() {
 	version.LogVersion()
 
 	namespace := os.Getenv("POD_NAMESPACE")
+
 	var mgr manager.Manager
 	var err error
 	var cleanUp func()
@@ -60,6 +62,11 @@ func main() {
 	subCmd := getSubCommand()
 	switch subCmd {
 	case operatorCmd:
+		profilerCfg := profiler.Config{
+			Service:        "operator",
+			ServiceVersion: "1.0.0",
+		}
+		_ = profiler.Start(profilerCfg)
 		cfg := getKubeConfig()
 		if !kubesystem.DeployedViaOLM() {
 			// setup manager only for certificates
@@ -72,16 +79,31 @@ func main() {
 		mgr, err = setupOperator(namespace, cfg)
 		exitOnError(err, "operator setup failed")
 	case csiDriverCmd:
+		profilerCfg := profiler.Config{
+			Service:        "csi",
+			ServiceVersion: "1.0.0",
+		}
+		_ = profiler.Start(profilerCfg)
 		cfg := getKubeConfig()
 		mgr, cleanUp, err = setupCSIDriver(namespace, cfg)
 		exitOnError(err, "csi driver setup failed")
 		defer cleanUp()
 	case webhookServerCmd:
+		profilerCfg := profiler.Config{
+			Service:        "webhook",
+			ServiceVersion: "1.0.0",
+		}
+		_ = profiler.Start(profilerCfg)
 		cfg := getKubeConfig()
 		mgr, cleanUp, err = setupWebhookServer(namespace, cfg)
 		exitOnError(err, "webhook-server setup failed")
 		defer cleanUp()
 	case standaloneCmd:
+		profilerCfg := profiler.Config{
+			Service:        "standalone",
+			ServiceVersion: "1.0.0",
+		}
+		_ = profiler.Start(profilerCfg)
 		err := startStandAloneInit()
 		exitOnError(err, "initContainer command failed")
 		os.Exit(0)

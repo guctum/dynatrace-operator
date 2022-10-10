@@ -50,7 +50,7 @@ func (gc *CSIGarbageCollector) SetupWithManager(mgr ctrl.Manager) error {
 
 func (gc *CSIGarbageCollector) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	log.Info("running OneAgent garbage collection", "namespace", request.Namespace, "name", request.Name)
-	reconcileResult := reconcile.Result{RequeueAfter: 60 * time.Minute}
+	reconcileResult := reconcile.Result{RequeueAfter: 1 * time.Minute}
 
 	var dynakube dynatracev1beta1.DynaKube
 	if err := gc.apiReader.Get(ctx, request.NamespacedName, &dynakube); err != nil {

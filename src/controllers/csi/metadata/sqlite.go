@@ -468,3 +468,7 @@ func (a *SqliteAccess) querySimpleStatement(statement, id string, vars ...interf
 	}
 	return nil
 }
+
+func (a *SqliteAccess) Vacuum() error {
+	return a.executeStatement("VACUUM;")
+}

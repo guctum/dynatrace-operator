@@ -2,6 +2,7 @@ package csigc
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/afero"
@@ -45,7 +46,7 @@ func (gc *CSIGarbageCollector) getLogFileInfo(tenantUUID string) (*logFileInfo, 
 	var nrOfFiles int64
 	var size int64
 	for _, volumeID := range unusedVolumeIDs {
-		_ = afero.Walk(gc.fs, gc.path.OverlayVarDir(tenantUUID, volumeID.Name()), func(_ string, file os.FileInfo, err error) error {
+		_ = walkDirectory(gc.fs, gc.path.OverlayVarDir(tenantUUID, volumeID.Name()), func(_ string, file os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
@@ -64,6 +65,41 @@ func (gc *CSIGarbageCollector) getLogFileInfo(tenantUUID string) (*logFileInfo, 
 	}, nil
 }
 
+func walkDirectory(fs afero.Fs, rootPath string, walkFn filepath.WalkFunc) []error {
+	queue := []string{rootPath}
+	errors := make([]error, 0)
+
+	for len(queue) > 0 {
+		var path string
+		path, queue = pop(queue)
+		fileInfos, err := afero.ReadDir(fs, path)
+
+		if err != nil {
+			errors = append(errors, err)
+		}
+
+		for _, fileInfo := range fileInfos {
+			filePath := filepath.Join(path, fileInfo.Name())
+
+			if fileInfo.IsDir() {
+				queue = append(queue, filePath)
+			}
+
+			err = walkFn(filePath, fileInfo, err)
+
+			if err != nil {
+				errors = append(errors, err)
+			}
+		}
+	}
+
+	return errors
+}
+
+func pop(queue []string) (string, []string) {
+	return queue[0], queue[1:]
+}
+
 func (gc *CSIGarbageCollector) getUnusedVolumeIDs(tenantUUID string) ([]os.FileInfo, error) {
 	var unusedVolumeIDs []os.FileInfo
 
@@ -73,12 +109,12 @@ func (gc *CSIGarbageCollector) getUnusedVolumeIDs(tenantUUID string) ([]os.FileI
 	}
 
 	for _, volumeID := range volumeIDs {
-		unused, err := afero.IsEmpty(gc.fs, gc.path.OverlayMappedDir(tenantUUID, volumeID.Name()))
+		dirEntry, err := os.ReadDir(gc.path.OverlayMappedDir(tenantUUID, volumeID.Name()))
 		if err != nil {
 			return nil, err
 		}
 
-		if unused {
+		if len(dirEntry) <= 0 {
 			unusedVolumeIDs = append(unusedVolumeIDs, volumeID)
 		}
 	}

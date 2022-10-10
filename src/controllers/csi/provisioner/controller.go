@@ -78,6 +78,7 @@ func (provisioner *OneAgentProvisioner) SetupWithManager(mgr ctrl.Manager) error
 func (provisioner *OneAgentProvisioner) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	log.Info("reconciling DynaKube", "namespace", request.Namespace, "dynakube", request.Name)
 
+	provisioner.db.Vacuum()
 	dk, err := provisioner.getDynaKube(ctx, request.NamespacedName)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -94,7 +95,6 @@ func (provisioner *OneAgentProvisioner) Reconcile(ctx context.Context, request r
 		log.Info("DynaKube instance has not been reconciled yet and some values usually cached are missing, retrying in a few seconds")
 		return reconcile.Result{RequeueAfter: shortRequeueDuration}, nil
 	}
-
 	// creates a dt client and checks tokens exist for the given dynakube
 	dtc, err := buildDtc(provisioner, ctx, dk)
 	if err != nil {

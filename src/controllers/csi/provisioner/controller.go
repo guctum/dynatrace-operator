@@ -78,7 +78,12 @@ func (provisioner *OneAgentProvisioner) SetupWithManager(mgr ctrl.Manager) error
 func (provisioner *OneAgentProvisioner) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	log.Info("reconciling DynaKube", "namespace", request.Namespace, "dynakube", request.Name)
 
-	provisioner.db.Vacuum()
+	err := provisioner.db.Vacuum()
+
+	if err != nil {
+		log.Info(err.Error())
+	}
+
 	dk, err := provisioner.getDynaKube(ctx, request.NamespacedName)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {

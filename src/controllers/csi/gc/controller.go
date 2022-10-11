@@ -2,6 +2,7 @@ package csigc
 
 import (
 	"context"
+	"runtime"
 	"time"
 
 	dynatracev1beta1 "github.com/Dynatrace/dynatrace-operator/src/api/v1beta1"
@@ -52,8 +53,17 @@ func (gc *CSIGarbageCollector) Reconcile(ctx context.Context, request reconcile.
 	log.Info("running OneAgent garbage collection", "namespace", request.Namespace, "name", request.Name)
 	reconcileResult := reconcile.Result{RequeueAfter: 3 * time.Minute}
 
+	runtime.GC()
+	err := gc.db.Vacuum()
+
+	if err != nil {
+		log.Info(err.Error())
+	}
+
 	var dynakube dynatracev1beta1.DynaKube
-	if err := gc.apiReader.Get(ctx, request.NamespacedName, &dynakube); err != nil {
+	err = gc.apiReader.Get(ctx, request.NamespacedName, &dynakube)
+
+	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			log.Info("given DynaKube object not found")
 			return reconcileResult, nil
@@ -64,19 +74,23 @@ func (gc *CSIGarbageCollector) Reconcile(ctx context.Context, request reconcile.
 	}
 
 	tenantUUID, err := dynakube.TenantUUID()
+
 	if err != nil {
 		log.Error(err, "failed to get tenantUUID of DynaKube")
 		return reconcileResult, err
 	}
 
 	latestAgentVersion := dynakube.Status.LatestAgentVersionUnixPaas
+
 	if latestAgentVersion == "" {
 		log.Info("no latest agent version found in dynakube, checking later")
 		return reconcileResult, nil
 	}
 
 	var dynakubeList dynatracev1beta1.DynaKubeList
-	if err := gc.apiReader.List(ctx, &dynakubeList, client.InNamespace(dynakube.Namespace)); err != nil {
+	err = gc.apiReader.List(ctx, &dynakubeList, client.InNamespace(dynakube.Namespace))
+
+	if err != nil {
 		log.Error(err, "failed to get all DynaKube objects")
 		return reconcileResult, err
 	}

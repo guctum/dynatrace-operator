@@ -65,7 +65,7 @@ func (gc *CSIGarbageCollector) getLogFileInfo(tenantUUID string) (*logFileInfo, 
 	}, nil
 }
 
-func walkDirectory(fs afero.Fs, rootPath string, walkFn filepath.WalkFunc) []error {
+func walkDirectory(fs afero.Fs, rootPath string, walkFn filepath.WalkFunc) error {
 	queue := []string{rootPath}
 	errors := make([]error, 0)
 
@@ -93,7 +93,11 @@ func walkDirectory(fs afero.Fs, rootPath string, walkFn filepath.WalkFunc) []err
 		}
 	}
 
-	return errors
+	if len(errors) > 0 {
+		return errors[0]
+	}
+
+	return nil
 }
 
 func pop(queue []string) (string, []string) {

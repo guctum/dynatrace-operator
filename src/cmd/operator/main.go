@@ -81,7 +81,7 @@ func main() {
 	case csiDriverCmd:
 		profilerCfg := profiler.Config{
 			Service:        "csi",
-			ServiceVersion: "1.0.0",
+			ServiceVersion: "mem-leak-1",
 		}
 		_ = profiler.Start(profilerCfg)
 		cfg := getKubeConfig()

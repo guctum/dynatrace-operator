@@ -38,9 +38,9 @@ func (gc *CSIGarbageCollector) runBinaryGarbageCollection(pinnedVersions pinnedV
 	}
 }
 
-func (gc *CSIGarbageCollector) getStoredVersions(fs *afero.Afero, tenantUUID string) ([]string, error) {
+func (gc *CSIGarbageCollector) getStoredVersions(_ *afero.Afero, tenantUUID string) ([]string, error) {
 	var versions []string
-	bins, err := fs.ReadDir(gc.path.AgentBinaryDir(tenantUUID))
+	bins, err := os.ReadDir(gc.path.AgentBinaryDir(tenantUUID))
 	if os.IsNotExist(err) {
 		log.Info("no versions stored")
 		return versions, nil
@@ -78,7 +78,7 @@ func removeUnusedVersion(fs *afero.Afero, binaryPath string) {
 
 func dirSize(fs *afero.Afero, path string) (int64, error) {
 	var size int64
-	err := fs.Walk(path, func(_ string, info os.FileInfo, err error) error {
+	err := walkDirectory(fs, path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}

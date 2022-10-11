@@ -21,9 +21,7 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"runtime"
 	"strings"
-	"time"
 
 	dtcsi "github.com/Dynatrace/dynatrace-operator/src/controllers/csi"
 	csivolumes "github.com/Dynatrace/dynatrace-operator/src/controllers/csi/driver/volumes"
@@ -96,31 +94,21 @@ func (svr *CSIDriverServer) Start(ctx context.Context) error {
 	}
 
 	server := grpc.NewServer(grpc.UnaryInterceptor(logGRPC()))
-	go func() {
-		ticker := time.NewTicker(memoryMetricTick)
-		done := false
-		for !done {
-			select {
-			case <-ctx.Done():
-				log.Info("stopping server")
-				server.GracefulStop()
-				log.Info("stopped server")
-				done = true
-			case <-ticker.C:
-				var m runtime.MemStats
-				runtime.ReadMemStats(&m)
-				memoryUsageMetric.Set(float64(m.Alloc))
-			}
-		}
-	}()
 
 	csi.RegisterIdentityServer(server, svr)
 	csi.RegisterNodeServer(server, svr)
 
 	log.Info("listening for connections on address", "address", listener.Addr())
 
-	_ = server.Serve(listener)
+	go func() {
+		err = server.Serve(listener)
+		if err != nil {
+			log.Error(err, "failed to serve")
+		}
+	}()
 
+	<-ctx.Done()
+	server.GracefulStop()
 	return nil
 }
 

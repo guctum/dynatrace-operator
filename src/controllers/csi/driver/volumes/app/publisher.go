@@ -117,6 +117,10 @@ func (publisher *AppVolumePublisher) UnpublishVolume(ctx context.Context, volume
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	if err = publisher.fs.RemoveAll(publisher.path.AgentRunDirForVolume(volume.TenantUUID, volume.VolumeID)); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
 	log.Info("volume has been unpublished", "targetPath", volumeInfo.TargetPath)
 
 	publisher.fireVolumeUnpublishedMetric(*volume)

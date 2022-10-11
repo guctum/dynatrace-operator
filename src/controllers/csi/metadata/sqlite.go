@@ -418,7 +418,7 @@ func (access *SqliteAccess) GetAllVolumes(ctx context.Context) ([]*Volume, error
 		return nil, errors.WithStack(errors.WithMessage(err, "couldn't get all the volumes"))
 	}
 	volumes := []*Volume{}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var id string
 		var podName string
@@ -443,7 +443,7 @@ func (access *SqliteAccess) GetAllDynakubes(ctx context.Context) ([]*Dynakube, e
 		return nil, errors.WithStack(errors.WithMessage(err, "couldn't get all the dynakubes"))
 	}
 	dynakubes := []*Dynakube{}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var name string
 		var version string
@@ -468,7 +468,7 @@ func (access *SqliteAccess) GetAllOsAgentVolumes(ctx context.Context) ([]*OsAgen
 		return nil, errors.WithStack(errors.WithMessage(err, "couldn't get all the osagent volumes"))
 	}
 	osVolumes := []*OsAgentVolume{}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var volumeID string
 		var tenantUUID string
@@ -492,7 +492,7 @@ func (access *SqliteAccess) GetUsedVersions(ctx context.Context, tenantUUID stri
 		return nil, errors.WithStack(errors.WithMessagef(err, "couldn't get used version info for tenant uuid '%s'", tenantUUID))
 	}
 	versions := map[string]bool{}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var version string
 		err := rows.Scan(&version)
@@ -513,7 +513,7 @@ func (access *SqliteAccess) GetAllUsedVersions(ctx context.Context) (map[string]
 		return nil, errors.WithStack(errors.WithMessagef(err, "couldn't get all used version info"))
 	}
 	versions := map[string]bool{}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var version string
 		err := rows.Scan(&version)
@@ -536,7 +536,7 @@ func (access *SqliteAccess) GetUsedImageDigests(ctx context.Context) (map[string
 		return nil, errors.WithStack(errors.WithMessage(err, "couldn't get used image digests from database"))
 	}
 	imageDigests := map[string]bool{}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var digest string
 		err := rows.Scan(&digest)
@@ -567,7 +567,7 @@ func (access *SqliteAccess) GetPodNames(ctx context.Context) (map[string]string,
 		return nil, errors.WithStack(errors.WithMessage(err, "couldn't get all pod names"))
 	}
 	podNames := map[string]string{}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var podName string
 		var volumeID string
@@ -587,7 +587,7 @@ func (access *SqliteAccess) GetTenantsToDynakubes(ctx context.Context) (map[stri
 		return nil, errors.WithStack(errors.WithMessage(err, "couldn't get all tenants to dynakube metadata"))
 	}
 	dynakubes := map[string]string{}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var uuid string
 		var dynakube string
